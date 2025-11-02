@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Full-Stack ALB Demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{
+  font-family: system-ui, Segoe UI, Roboto;
+  padding: 24px;
+  background: #f7fafc;
+}
+button{
+  padding: 8px 12px;
+  cursor: pointer;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+}
+pre{
+  background:#fff;
+  padding: 12px;
+  border-radius: 8px;
+  margin-top:12px;
+  border:1px solid #e2e8f0;
+}
+</style>
+</head>
+
+<body>
+
+<h1>Full-Stack ALB Demo</h1>
+<p>This page calls <code>/api/health</code> on the backend (served via ALB) and shows which instance responded.</p>
+
+<button id="call">Call API</button>
+<pre id="out">Click button to test...</pre>
+
+<script>
+document.getElementById('call').addEventListener('click', async () => {
+  const out = document.getElementById('out');
+  out.textContent = 'Calling API...';
+
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    out.textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    out.textContent = 'Error: ' + err;
+  }
+});
+</script>
+
+</body>
+</html>
+#!/bin/bash
+# EC2 instance bootstrap script for ALB Node.js demo
+
+GIT_REPO_URL="https://github.com/YOUR_USERNAME/YOUR_REPO.git"
+APP_DIR="/opt/app"
+BRANCH="main"
+
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id || hostname)
+
+yum update -y
+curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -
+yum install -y nodejs git
+
+mkdir -p $APP_DIR
+cd $APP_DIR
+
+git clone -b $BRANCH $GIT_REPO_URL .
+npm install
+
+cat <<EOF > .env
+INSTANCE_ID=$INSTANCE_ID
+PORT=3000
+EOF
+
+# Create a simple health API if repo doesn't have one
+cat <<EOF > server.js
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+const instance = process.env.INSTANCE_ID || "unknown";
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: "ok", instance });
+});
+
+app.listen(port, () => console.log("Server running on", port));
+EOF
+
+npm install express
+
+# run forever
+npm install -g pm2
+pm2 start server.js
+pm2 save
+pm2 startup systemd
